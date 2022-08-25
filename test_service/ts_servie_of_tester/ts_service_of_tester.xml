@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+
+<!--
+  ts_service_of_tester initial setting file
+-->
+
+<!--
+using  in version 1.0
+-->
+<process
+  version ="1.0"
+  date="23082022"
+  >
+
+  <info
+    s_instance_event_name ="Global\\6AFE1DA2-435E-4987-A7FE-39F3FBC5B262"
+    s_command_line = "C:\job\test.service\test_service\Debug\test_runner_mfc.exe"
+    s_working_directory= "C:\job\test.service\test_service\Debug\"
+    n_pause_start= "1000"
+    n_pause_end= "1000"
+    b_user_interface = "1"
+    b_restart = "0"
+    s_user_name =""
+    s_domain =""
+    s_password =""
+    >
+    the information of user application
+  </info>
+
+</process>
