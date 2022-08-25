@@ -327,8 +327,9 @@ private:
 
 		_ns_tools::ct_log::get_instance().log_fmt(L" : I : %s : StartProcessesDifferentSession().\n", __WFUNCTION__);
 		svr._start_processes_different_session();
-		//
-		cts_service::_test_in_service_start();
+		svr._run_as_interactive_user_account();
+		
+		//cts_service::_test_in_service_start();
 	}
 
 	static DWORD WINAPI _service_handler_ex(DWORD dwControl, DWORD dwEventType, LPVOID lpEventData, LPVOID lpContext)
@@ -1046,6 +1047,107 @@ private:
 		return _v_warp_ptr_event;
 	}
 
+	bool _run_as_interactive_user_account()
+	{
+		bool b_result(false);
+
+		do {
+			HRESULT hr(0);
+			HANDLE h_process_token(NULL);
+
+			if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &h_process_token)) {
+				continue;
+			}
+			_ns_tools::ct_warp::chandle handle_process_token(h_process_token);
+			//
+			LUID luid = { 0, };
+			if (!LookupPrivilegeValue(NULL, L"SeTcbPrivilege", &luid)) {
+				continue;
+			}
+
+			TOKEN_PRIVILEGES adj_token_privileges = { 0 }, old_token_privileges = { 0 };
+			adj_token_privileges.PrivilegeCount = 1;
+			adj_token_privileges.Privileges[0].Luid = luid;
+			adj_token_privileges.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+			DWORD dw_old_tp_len(0);
+			if (!AdjustTokenPrivileges(
+				handle_process_token.get_handle(),
+				FALSE,
+				&adj_token_privileges,
+				sizeof(TOKEN_PRIVILEGES),
+				&old_token_privileges,
+				&dw_old_tp_len
+			)) {
+				continue;
+			}
+
+			DWORD dw_console_session_id = WTSGetActiveConsoleSessionId();
+			if (dw_console_session_id == 0xFFFFFFFF) {
+				continue;
+			}
+
+			HANDLE h_impersonation_token(0);
+			if (!WTSQueryUserToken(
+				dw_console_session_id,
+				&h_impersonation_token
+			)) {
+				continue;
+			}
+			_ns_tools::ct_warp::chandle handle_impersonation_token(h_impersonation_token);
+
+			HANDLE h_user_token(NULL);
+			if (!DuplicateTokenEx(
+				handle_impersonation_token.get_handle(),
+				MAXIMUM_ALLOWED,
+				NULL,
+				SecurityIdentification,
+				TokenPrimary,
+				&h_user_token
+			)) {
+				continue;
+			}
+			_ns_tools::ct_warp::chandle handle_user_token(h_user_token);
+
+			static wchar_t s_desk_top[] = L"winsta0\\default";
+			STARTUPINFO si = { 0 };
+			si.cb = sizeof(STARTUPINFO);
+			si.lpDesktop = s_desk_top;
+
+			void* lp_enviroment(NULL);
+			if (!CreateEnvironmentBlock(
+				&lp_enviroment,
+				handle_user_token.get_handle(),
+				TRUE
+			)) {
+				continue;
+			}
+			_ns_tools::ct_warp::cenvironment_block env_block(lp_enviroment);
+
+			_ns_tools::type_v_ws_buffer v(_MAX_PATH);
+			m_process.s_command_line.copy(&v[0], m_process.s_command_line.size() + 1);
+			PROCESS_INFORMATION process_info = { 0 };
+			if (!CreateProcessAsUser(
+				handle_user_token.get_handle(),
+				&v[0],
+				NULL,
+				NULL,
+				NULL,
+				FALSE,
+				CREATE_UNICODE_ENVIRONMENT,
+				env_block.get_block(),
+				m_process.s_working_directory.size() == 0 ? NULL : m_process.s_working_directory.c_str(),
+				&si,
+				&m_proc_info
+			)) {
+				continue;
+			}
+			_ns_tools::ct_log::get_instance().log_fmt(L" : S : %s : starting user application.\n", __WFUNCTION__);
+			//
+			b_result = true;
+		} while (false);
+		return b_result;
+	}
 
 private:
 	bool m_b_ini;
