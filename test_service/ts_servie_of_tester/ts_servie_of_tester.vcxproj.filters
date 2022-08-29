@@ -40,5 +40,7 @@
   </ItemGroup>
   <ItemGroup>
     <Xml Include="ts_service_of_tester.xml" />
+    <Xml Include="..\Debug\ts_service_of_tester.xml" />
+    <Xml Include="..\Release\ts_service_of_tester.xml" />
   </ItemGroup>
 </Project>

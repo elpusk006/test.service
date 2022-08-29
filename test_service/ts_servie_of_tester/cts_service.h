@@ -27,9 +27,14 @@ private:
 	enum { const_size_table = 2 };
 
 	struct _process_para {
+		std::wstring s_command_line_for_user_account;
+		std::wstring s_command_line_for_system_account;
+		std::wstring s_command_line_for_session0;
 
-		std::wstring s_command_line;
-		std::wstring s_working_directory;
+		std::wstring s_working_directory_for_user_account;
+		std::wstring s_working_directory_for_system_account;
+		std::wstring s_working_directory_for_session0;
+
 		UINT n_pause_start;
 		UINT n_pause_end;
 		bool b_user_interface;
@@ -206,8 +211,14 @@ private:
 		m_s_service_name(L"ts_service_of_tester")
 	{
 		do {
-			m_process.s_command_line.clear();
-			m_process.s_working_directory.clear();
+			m_process.s_command_line_for_user_account.clear();
+			m_process.s_command_line_for_system_account.clear();
+			m_process.s_command_line_for_session0.clear();
+
+			m_process.s_working_directory_for_user_account.clear();
+			m_process.s_working_directory_for_system_account.clear();
+			m_process.s_working_directory_for_session0.clear();
+
 			m_process.n_pause_start = 0;
 			m_process.n_pause_end = 0;
 			m_process.b_user_interface = true;
@@ -325,10 +336,19 @@ private:
 
 		svr.m_proc_info.hProcess = NULL;
 
-		_ns_tools::ct_log::get_instance().log_fmt(L" : I : %s : StartProcessesDifferentSession().\n", __WFUNCTION__);
-		svr._start_processes_different_session();
-		svr._run_as_interactive_user_account();
-		
+		if (!svr.m_process.s_command_line_for_system_account.empty()) {
+			_ns_tools::ct_log::get_instance().log_fmt(L" : I : %s : _start_processes_different_session().\n", __WFUNCTION__);
+			svr._start_processes_different_session();
+		}
+		if (!svr.m_process.s_command_line_for_user_account.empty()) {
+			_ns_tools::ct_log::get_instance().log_fmt(L" : I : %s : _run_as_interactive_user_account().\n", __WFUNCTION__);
+			svr._run_as_interactive_user_account();
+		}
+		if (!svr.m_process.s_command_line_for_session0.empty()) {
+			_ns_tools::ct_log::get_instance().log_fmt(L" : I : %s : _start_processes_different_session(0).\n", __WFUNCTION__);
+			svr._start_processes_different_session(0);
+		}
+
 		//cts_service::_test_in_service_start();
 	}
 
@@ -553,10 +573,17 @@ private:
 				continue;
 			}
 
-			std::wstring s_winlogon_exe(L"winlogon.exe");
+			std::wstring s_taget_exe;
+			if (dw_session_id == 0) {
+				s_taget_exe = L"wininit.exe";
+			}
+			else {
+				s_taget_exe = L"winlogon.exe";
+			}
+			
 
 			do {
-				if (s_winlogon_exe.compare(procEntry.szExeFile) == 0) {
+				if (s_taget_exe.compare(procEntry.szExeFile) == 0) {
 					// We found a winlogon process...make sure it's running in the console session
 					DWORD dw_win_log_on_session_id = 0;
 					if (ProcessIdToSessionId(procEntry.th32ProcessID, &dw_win_log_on_session_id) && dw_win_log_on_session_id == dw_session_id)
@@ -576,59 +603,87 @@ private:
 			ZeroMemory(&pi, sizeof(pi));
 			TOKEN_PRIVILEGES tp;
 			LUID luid;
-
-			_ns_tools::ct_warp::chandle process_handle(::OpenProcess(MAXIMUM_ALLOWED, FALSE, winlogonPid));
-			HANDLE h_ptoken;
-
-			if (!::OpenProcessToken(
-				process_handle.get_handle(),
-				TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_ADJUST_SESSIONID | TOKEN_READ | TOKEN_WRITE,
-				&h_ptoken)
-				)
-			{
-				_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : OpenProcessToken().\n", __WFUNCTION__);
-			}
-			_ns_tools::ct_warp::chandle ptoken_handle(h_ptoken);
-			if (!LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &luid))
-			{
-				_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : LookupPrivilegeValue().\n", __WFUNCTION__);
-			}
-			tp.PrivilegeCount = 1;
-			tp.Privileges[0].Luid = luid;
-			tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-
-			HANDLE h_user_token_dup(NULL);
-			if (!::DuplicateTokenEx(
-				ptoken_handle.get_handle(),
-				MAXIMUM_ALLOWED,
-				NULL,
-				SecurityIdentification,
-				TokenPrimary,
-				&h_user_token_dup
-			)) {
-				_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : DuplicateTokenEx().\n", __WFUNCTION__);
-			}
-			_ns_tools::ct_warp::chandle user_token_dup_handle(h_user_token_dup);
-
-			//Adjust Token privilege
-			::SetTokenInformation(
-				user_token_dup_handle.get_handle(),
-				TokenSessionId,
-				(void*)dw_session_id,
-				sizeof(DWORD)
-			);
-
-			if (!AdjustTokenPrivileges(user_token_dup_handle.get_handle(), FALSE, &tp, sizeof(TOKEN_PRIVILEGES), (PTOKEN_PRIVILEGES)NULL, NULL))
-			{
-				_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : AdjustTokenPrivileges().\n", __WFUNCTION__);
-			}
-
-			if (GetLastError() == ERROR_NOT_ALL_ASSIGNED)
-			{
-				_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : AdjustTokenPrivileges() : Token does not have the provilege.\n", __WFUNCTION__);
-			}
-
 			LPVOID p_env = NULL;
+			HANDLE h_user_token_dup(NULL);
+			_ns_tools::ct_warp::chandle user_token_dup_handle;
+			_ns_tools::type_v_ws_buffer v(_MAX_PATH);
+			const wchar_t* lpCurrentDirectory(NULL);
+
+			if (dw_session_id != 0) {
+				_ns_tools::ct_warp::chandle process_handle(::OpenProcess(MAXIMUM_ALLOWED, FALSE, winlogonPid));
+				HANDLE h_ptoken;
+
+				if (!::OpenProcessToken(///////.......
+					process_handle.get_handle(),
+					TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_ADJUST_SESSIONID | TOKEN_READ | TOKEN_WRITE,
+					&h_ptoken)
+					)
+				{
+					_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : OpenProcessToken().\n", __WFUNCTION__);
+				}
+				_ns_tools::ct_warp::chandle ptoken_handle(h_ptoken);
+				if (!LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &luid))
+				{
+					_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : LookupPrivilegeValue().\n", __WFUNCTION__);
+				}
+				tp.PrivilegeCount = 1;
+				tp.Privileges[0].Luid = luid;
+				tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+
+				if (!::DuplicateTokenEx(///////.......
+					ptoken_handle.get_handle(),
+					MAXIMUM_ALLOWED,
+					NULL,
+					SecurityIdentification,
+					TokenPrimary,
+					&h_user_token_dup
+				)) {
+					_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : DuplicateTokenEx().\n", __WFUNCTION__);
+				}
+				else {
+					user_token_dup_handle.set_handle(h_user_token_dup);
+				}
+
+				//Adjust Token privilege
+				::SetTokenInformation(
+					user_token_dup_handle.get_handle(),
+					TokenSessionId,
+					(void*)dw_session_id,
+					sizeof(DWORD)
+				);
+
+				if (!AdjustTokenPrivileges(///////.......
+					user_token_dup_handle.get_handle(),
+					FALSE,
+					&tp,
+					sizeof(TOKEN_PRIVILEGES),
+					(PTOKEN_PRIVILEGES)NULL,
+					NULL)
+					) {
+					_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : AdjustTokenPrivileges().\n", __WFUNCTION__);
+				}
+
+				if (GetLastError() == ERROR_NOT_ALL_ASSIGNED)
+				{
+					_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : AdjustTokenPrivileges() : Token does not have the provilege.\n", __WFUNCTION__);
+				}
+
+				// dw_session_id isn't zero
+				m_process.s_command_line_for_system_account.copy(&v[0], m_process.s_command_line_for_system_account.size() + 1);
+
+				if (!m_process.s_working_directory_for_system_account.empty()) {
+					lpCurrentDirectory = m_process.s_working_directory_for_system_account.c_str();
+				}
+			}
+			else {
+				// dw_session_id is zero
+				m_process.s_command_line_for_session0.copy(&v[0], m_process.s_command_line_for_session0.size() + 1);
+
+				if (!m_process.s_working_directory_for_session0.empty()) {
+					lpCurrentDirectory = m_process.s_working_directory_for_session0.c_str();
+				}
+			}
 
 			if (::CreateEnvironmentBlock(&p_env, user_token_dup_handle.get_handle(), TRUE))
 			{
@@ -636,15 +691,12 @@ private:
 			}
 			else {
 				p_env = NULL;
-				_ns_tools::ct_log::get_instance().log_fmt(L" : I : %s : CreateEnvironmentBlock().\n", __WFUNCTION__);
+				_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : CreateEnvironmentBlock().\n", __WFUNCTION__);
 			}
 
 			_ns_tools::ct_warp::cenvironment_block env_block(p_env);
 
-			// Launch the process in the client's logon session.
-			_ns_tools::type_v_ws_buffer v(_MAX_PATH);
-			m_process.s_command_line.copy(&v[0], m_process.s_command_line.size() + 1);
-
+			// Launch the process in the client's logon session. or session0
 			if (!::CreateProcessAsUser(
 				user_token_dup_handle.get_handle(),            // client's access token
 				&v[0],              // file to execute
@@ -654,7 +706,7 @@ private:
 				FALSE,             // handles are not inheritable
 				dwCreationFlags,  // creation flags
 				env_block.get_block(),              // pointer to new environment block 
-				m_process.s_working_directory.size() == 0 ? NULL : m_process.s_working_directory.c_str(),              // name of current directory 
+				lpCurrentDirectory,              // name of current directory 
 				&si,               // pointer to STARTUPINFO structure
 				&m_proc_info		// receives information about new process
 			)) {
@@ -663,7 +715,7 @@ private:
 				_ns_tools::ct_log::get_instance().log_fmt(L" : I : user_token_dup_handle = 0x%x.\n", user_token_dup_handle.get_handle());
 				_ns_tools::ct_log::get_instance().log_fmt(L" : I : lpApplicationName = %s.\n", &v[0]);
 				_ns_tools::ct_log::get_instance().log_fmt(L" : I : dwCreationFlags = 0x%x\n", dwCreationFlags);
-				_ns_tools::ct_log::get_instance().log_fmt(L" : I : s_working_directory = %s\n", m_process.s_working_directory.c_str());
+				_ns_tools::ct_log::get_instance().log_fmt(L" : I : s_working_directory = %s\n", lpCurrentDirectory);
 
 				continue;
 			}
@@ -712,8 +764,13 @@ private:
 			_ns_tools::ct_xml_list::type_ptr_element_format ptr_element_device;
 			ptr_element_device = xml_format.add_sub_element(L"info", _ns_tools::ct_convert::type_value_type::value_type_string);
 			ptr_element_device->add_attribute(L"s_instance_event_name", _ns_tools::ct_convert::type_value_type::value_type_string);
-			ptr_element_device->add_attribute(L"s_command_line", _ns_tools::ct_convert::type_value_type::value_type_string);
-			ptr_element_device->add_attribute(L"s_working_directory", _ns_tools::ct_convert::type_value_type::value_type_string);
+			ptr_element_device->add_attribute(L"s_command_line_for_user_account", _ns_tools::ct_convert::type_value_type::value_type_string);
+			ptr_element_device->add_attribute(L"s_command_line_for_system_account", _ns_tools::ct_convert::type_value_type::value_type_string);
+			ptr_element_device->add_attribute(L"s_command_line_for_session0", _ns_tools::ct_convert::type_value_type::value_type_string);
+
+			ptr_element_device->add_attribute(L"s_working_directory_for_user_account", _ns_tools::ct_convert::type_value_type::value_type_string);
+			ptr_element_device->add_attribute(L"s_working_directory_for_system_account", _ns_tools::ct_convert::type_value_type::value_type_string);
+			ptr_element_device->add_attribute(L"s_working_directory_for_session0", _ns_tools::ct_convert::type_value_type::value_type_string);
 
 			ptr_element_device->add_attribute(L"n_pause_start", _ns_tools::ct_convert::type_value_type::value_type_int);
 			ptr_element_device->add_attribute(L"n_pause_end", _ns_tools::ct_convert::type_value_type::value_type_int);
@@ -752,12 +809,26 @@ private:
 			if (!el_device->get_attribute(s_data, L"s_instance_event_name")) {
 				continue;
 			}
-			if (!el_device->get_attribute(s_data, L"s_command_line")) {
+			if (!el_device->get_attribute(s_data, L"s_command_line_for_user_account")) {
 				continue;
 			}
-			if (!el_device->get_attribute(s_data, L"s_working_directory")) {
+			if (!el_device->get_attribute(s_data, L"s_command_line_for_system_account")) {
 				continue;
 			}
+			if (!el_device->get_attribute(s_data, L"s_command_line_for_session0")) {
+				continue;
+			}
+
+			if (!el_device->get_attribute(s_data, L"s_working_directory_for_user_account")) {
+				continue;
+			}
+			if (!el_device->get_attribute(s_data, L"s_working_directory_for_system_account")) {
+				continue;
+			}
+			if (!el_device->get_attribute(s_data, L"s_working_directory_for_session0")) {
+				continue;
+			}
+
 			if (!el_device->get_attribute(s_data, L"n_pause_start")) {
 				continue;
 			}
@@ -817,8 +888,14 @@ private:
 
 		do {
 			m_s_instance_event_name.clear();
-			m_process.s_command_line.clear();
-			m_process.s_working_directory.clear();
+			m_process.s_command_line_for_user_account.clear();
+			m_process.s_command_line_for_system_account.clear();
+			m_process.s_command_line_for_session0.clear();
+
+			m_process.s_working_directory_for_user_account.clear();
+			m_process.s_working_directory_for_system_account.clear();
+			m_process.s_working_directory_for_session0.clear();
+			
 			m_process.n_pause_start = 0;
 			m_process.n_pause_end = 0;
 			m_process.b_user_interface = true;
@@ -833,15 +910,42 @@ private:
 				continue;
 			m_s_instance_event_name = s_value;
 
-			if (!_get_front_value(s_value, L"info", L"s_command_line"))
+			if (!_get_front_value(s_value, L"info", L"s_command_line_for_user_account"))
 				continue;
+			v.assign(v.size(), 0);
 			n_size = ExpandEnvironmentStrings(s_value.c_str(), &v[0], static_cast<DWORD>(v.size()));
-			m_process.s_command_line.assign(&v[0], n_size);
+			m_process.s_command_line_for_user_account.assign(&v[0], n_size);
 
-			if (!_get_front_value(s_value, L"info", L"s_working_directory"))
+			if (!_get_front_value(s_value, L"info", L"s_command_line_for_system_account"))
 				continue;
+			v.assign(v.size(), 0);
 			n_size = ExpandEnvironmentStrings(s_value.c_str(), &v[0], static_cast<DWORD>(v.size()));
-			m_process.s_working_directory.assign(&v[0], n_size);
+			m_process.s_command_line_for_system_account.assign(&v[0], n_size);
+
+			if (!_get_front_value(s_value, L"info", L"s_command_line_for_session0"))
+				continue;
+			v.assign(v.size(), 0);
+			n_size = ExpandEnvironmentStrings(s_value.c_str(), &v[0], static_cast<DWORD>(v.size()));
+			m_process.s_command_line_for_session0.assign(&v[0], n_size);
+			//
+			if (!_get_front_value(s_value, L"info", L"s_working_directory_for_user_account"))
+				continue;
+			v.assign(v.size(), 0);
+			n_size = ExpandEnvironmentStrings(s_value.c_str(), &v[0], static_cast<DWORD>(v.size()));
+			m_process.s_working_directory_for_user_account.assign(&v[0], n_size);
+
+			if (!_get_front_value(s_value, L"info", L"s_working_directory_for_system_account"))
+				continue;
+			v.assign(v.size(), 0);
+			n_size = ExpandEnvironmentStrings(s_value.c_str(), &v[0], static_cast<DWORD>(v.size()));
+			m_process.s_working_directory_for_system_account.assign(&v[0], n_size);
+
+			if (!_get_front_value(s_value, L"info", L"s_working_directory_for_session0"))
+				continue;
+			v.assign(v.size(), 0);
+			n_size = ExpandEnvironmentStrings(s_value.c_str(), &v[0], static_cast<DWORD>(v.size()));
+			m_process.s_working_directory_for_session0.assign(&v[0], n_size);
+
 
 			if (!_get_front_value(n_value, L"info", L"n_pause_start"))
 				continue;
@@ -876,8 +980,14 @@ private:
 			b_result = true;
 
 			_ns_tools::ct_log::get_instance().log_fmt(L" : I : s_instance_event_name = %s.\n", m_s_instance_event_name.c_str());
-			_ns_tools::ct_log::get_instance().log_fmt(L" : I : s_command_line = %s.\n", m_process.s_command_line.c_str());
-			_ns_tools::ct_log::get_instance().log_fmt(L" : I : s_working_directory = %s.\n", m_process.s_working_directory.c_str());
+			_ns_tools::ct_log::get_instance().log_fmt(L" : I : s_command_line_for_user_account = %s.\n", m_process.s_command_line_for_user_account.c_str());
+			_ns_tools::ct_log::get_instance().log_fmt(L" : I : s_command_line_for_system_account = %s.\n", m_process.s_command_line_for_system_account.c_str());
+			_ns_tools::ct_log::get_instance().log_fmt(L" : I : s_command_line_for_session0 = %s.\n", m_process.s_command_line_for_session0.c_str());
+
+			_ns_tools::ct_log::get_instance().log_fmt(L" : I : s_working_directory_for_user_account = %s.\n", m_process.s_working_directory_for_user_account.c_str());
+			_ns_tools::ct_log::get_instance().log_fmt(L" : I : s_working_directory_for_system_account = %s.\n", m_process.s_working_directory_for_system_account.c_str());
+			_ns_tools::ct_log::get_instance().log_fmt(L" : I : s_working_directory_for_session0 = %s.\n", m_process.s_working_directory_for_session0.c_str());
+
 			_ns_tools::ct_log::get_instance().log_fmt(L" : I : n_pause_start = %u.\n", m_process.n_pause_start);
 			_ns_tools::ct_log::get_instance().log_fmt(L" : I : n_pause_end = %u.\n", m_process.n_pause_end);
 			_ns_tools::ct_log::get_instance().log_fmt(L" : I : b_user_interface = %s.\n", m_process.b_user_interface==true ? L"true":L"false");
@@ -1050,18 +1160,21 @@ private:
 	bool _run_as_interactive_user_account()
 	{
 		bool b_result(false);
+		DWORD dw_result(0);
 
 		do {
 			HRESULT hr(0);
 			HANDLE h_process_token(NULL);
 
 			if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &h_process_token)) {
+				_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : OpenProcessToken().\n", __WFUNCTION__);
 				continue;
 			}
 			_ns_tools::ct_warp::chandle handle_process_token(h_process_token);
 			//
 			LUID luid = { 0, };
 			if (!LookupPrivilegeValue(NULL, L"SeTcbPrivilege", &luid)) {
+				_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : LookupPrivilegeValue().\n", __WFUNCTION__);
 				continue;
 			}
 
@@ -1079,11 +1192,13 @@ private:
 				&old_token_privileges,
 				&dw_old_tp_len
 			)) {
+				_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : AdjustTokenPrivileges().\n", __WFUNCTION__);
 				continue;
 			}
 
 			DWORD dw_console_session_id = WTSGetActiveConsoleSessionId();
 			if (dw_console_session_id == 0xFFFFFFFF) {
+				_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : WTSGetActiveConsoleSessionId().\n", __WFUNCTION__);
 				continue;
 			}
 
@@ -1092,6 +1207,7 @@ private:
 				dw_console_session_id,
 				&h_impersonation_token
 			)) {
+				_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : WTSQueryUserToken().\n", __WFUNCTION__);
 				continue;
 			}
 			_ns_tools::ct_warp::chandle handle_impersonation_token(h_impersonation_token);
@@ -1105,6 +1221,7 @@ private:
 				TokenPrimary,
 				&h_user_token
 			)) {
+				_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : DuplicateTokenEx().\n", __WFUNCTION__);
 				continue;
 			}
 			_ns_tools::ct_warp::chandle handle_user_token(h_user_token);
@@ -1120,12 +1237,13 @@ private:
 				handle_user_token.get_handle(),
 				TRUE
 			)) {
+				_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : CreateEnvironmentBlock().\n", __WFUNCTION__);
 				continue;
 			}
 			_ns_tools::ct_warp::cenvironment_block env_block(lp_enviroment);
 
 			_ns_tools::type_v_ws_buffer v(_MAX_PATH);
-			m_process.s_command_line.copy(&v[0], m_process.s_command_line.size() + 1);
+			m_process.s_command_line_for_user_account.copy(&v[0], m_process.s_command_line_for_user_account.size() + 1);
 			PROCESS_INFORMATION process_info = { 0 };
 			if (!CreateProcessAsUser(
 				handle_user_token.get_handle(),
@@ -1136,13 +1254,39 @@ private:
 				FALSE,
 				CREATE_UNICODE_ENVIRONMENT,
 				env_block.get_block(),
-				m_process.s_working_directory.size() == 0 ? NULL : m_process.s_working_directory.c_str(),
+				m_process.s_working_directory_for_user_account.size() == 0 ? NULL : m_process.s_working_directory_for_user_account.c_str(),
 				&si,
 				&m_proc_info
 			)) {
+				dw_result = GetLastError();
+				_ns_tools::ct_log::get_instance().log_fmt(L" : E : %s : CreateProcessAsUser()=%u.\n", __WFUNCTION__, dw_result);
+				_ns_tools::ct_log::get_instance().log_fmt(L" : I : user_token_dup_handle = 0x%x.\n", handle_user_token.get_handle());
+				_ns_tools::ct_log::get_instance().log_fmt(L" : I : lpApplicationName = %s.\n", &v[0]);
+				_ns_tools::ct_log::get_instance().log_fmt(L" : I : dwCreationFlags = 0x%x\n", CREATE_UNICODE_ENVIRONMENT);
+				_ns_tools::ct_log::get_instance().log_fmt(L" : I : s_working_directory_for_system_account = %s\n", m_process.s_working_directory_for_system_account.c_str());
+
 				continue;
 			}
 			_ns_tools::ct_log::get_instance().log_fmt(L" : S : %s : starting user application.\n", __WFUNCTION__);
+
+			std::wstring s_msg(L"Process ID : ");
+
+			s_msg += std::to_wstring((unsigned long long)m_proc_info.dwProcessId);
+			s_msg += L"\n";
+
+			s_msg += L"Thread ID : ";
+			s_msg += std::to_wstring((unsigned long long)m_proc_info.dwThreadId);
+			s_msg += L"\n";
+
+			s_msg += L"Process Handle : ";
+			s_msg += std::to_wstring((unsigned long long)m_proc_info.hProcess);
+			s_msg += L"\n";
+
+			s_msg += L"Thread Handle : ";
+			s_msg += std::to_wstring((unsigned long long)m_proc_info.hThread);
+			s_msg += L"\n";
+
+			_ns_tools::ct_log::get_instance().log_fmt(L" : I : Process Information\n %s", s_msg.c_str());
 			//
 			b_result = true;
 		} while (false);

@@ -8,6 +8,11 @@
 #include "test_runner_mfcDlg.h"
 #include "afxdialogex.h"
 
+#include <Lmcons.h>
+
+#include <string>
+#include <sstream>
+
 #include <ctest_item.h>
 
 #ifdef _DEBUG
@@ -53,6 +58,31 @@ BOOL CtestrunnermfcDlg::OnInitDialog()
 
 	ShowWindow(SW_MINIMIZE);
 
+	//
+	unsigned long dw_process_id = GetCurrentProcessId();
+	unsigned long dw_session_id(0);
+	if (!ProcessIdToSessionId(dw_process_id, &dw_session_id)) {
+		dw_session_id = -1;
+	}
+	
+	_ns_tools::type_v_ws_buffer vw(UNLEN + 1,0);
+	unsigned long dw_size(vw.size());
+
+	GetUserName(&vw[0], &dw_size);
+	std::wstringstream ss;
+	ss << L"  account : " << &vw[0] << L", session_id : " << dw_session_id;
+
+	CString sTemp;
+	GetWindowText(sTemp);
+
+	std::wstring s_info((LPCTSTR)sTemp);
+
+	s_info += ss.str();
+
+	SetWindowText(s_info.c_str());
+
+	//
+
 	m_list_info.AddString(L" : OK : OnInitDialog().");
 
 	return TRUE;  // return TRUE  unless you set the focus to a control
@@ -97,6 +127,7 @@ HCURSOR CtestrunnermfcDlg::OnQueryDragIcon()
 void CtestrunnermfcDlg::OnBnClickedButtonTest()
 {
 	_test();
+
 }
 
 void CtestrunnermfcDlg::_test()
@@ -158,6 +189,8 @@ void CtestrunnermfcDlg::_test()
 	}
 
 
+	std::wstring s_path = ctest_item::get_current_user_document_folder_path();
+	m_list_info.AddString(s_path.c_str());
 }
 
 

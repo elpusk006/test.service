@@ -15,8 +15,14 @@ using  in version 1.0
 
   <info
     s_instance_event_name ="Global\\6AFE1DA2-435E-4987-A7FE-39F3FBC5B262"
-    s_command_line = "C:\job\test.service\test_service\Debug\test_runner_mfc.exe"
-    s_working_directory= "C:\job\test.service\test_service\Debug\"
+    s_command_line_for_user_account = "C:\job\test.service\test_service\Debug\test_runner_mfc.exe"
+    s_command_line_for_system_account = "C:\job\test.service\test_service\Debug\test_runner_mfc.exe"
+    s_command_line_for_session0 = "C:\job\test.service\test_service\Debug\test_runner_mfc.exe"
+    
+    s_working_directory_for_user_account= "C:\job\test.service\test_service\Debug\"
+    s_working_directory_for_system_account= "C:\job\test.service\test_service\Debug\"
+    s_working_directory_for_session0= "C:\job\test.service\test_service\Debug\"
+    
     n_pause_start= "1000"
     n_pause_end= "1000"
     b_user_interface = "1"

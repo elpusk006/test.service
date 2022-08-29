@@ -106,5 +106,31 @@ public:
 		return s_name;
 	}
 
+	static const std::wstring get_current_user_document_folder_path()
+	{
+		std::wstring s_path;
+
+		do {
+			TCHAR s_personal_folder[MAX_PATH] = {0};
+			/*
+			HANDLE hToken = NULL;
+			BOOL ok = OpenProcessToken(GetCurrentProcess(), TOKEN_READ, &hToken);
+			assert(ok);
+
+			wchar_t* penv = L"";
+			ok = CreateEnvironmentBlock((void**)&penv, hToken, TRUE);
+			assert(ok);
+
+			while (*penv) {
+				printf("%ls\n", penv);
+				penv += wcslen(penv) + 1;
+			}
+			*/
+
+			s_path = L"not yet I don't know.";
+		} while (false);
+		return s_path;
+	}
+
 };
 
